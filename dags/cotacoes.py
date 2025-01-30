@@ -1,10 +1,11 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.postgres.operators.postgres import PostgresOperator
 from datetime import datetime
 
 import pandas as pd
-import requests 
+import requests
 import logging
 
 from io import StringIO
@@ -23,13 +24,10 @@ dag = DAG(
     tags=["bcb"]
 )
 
-
-
 ####### EXTRACT ###############
 
 def EXTRACT(**kwargs):
-    df_nodash = kwargs["ds_nodash"]
-
+    ds_nodash = kwargs["ds_nodash"]
     base_url = "https://www4.bcb.gov.br/Download/fechamento/"
     full_url = base_url + ds_nodash + ".csv"
     logging.warning(full_url)
@@ -41,19 +39,18 @@ def EXTRACT(**kwargs):
             return csv_data
     except Exception as e:
         logging.error(e)
-        
-    extract_task = PythonOperator(
-        task_id='extract',
-        python_callable=extract,
-        provide_context=True, 
-        dag=dag
-    )
 
-
+# Definindo a tarefa de extração fora da função
+extract_task = PythonOperator(
+    task_id='extract',  # Aqui é onde o erro estava
+    python_callable=EXTRACT,
+    provide_context=True, 
+    dag=dag
+)
 
 ############# TRANSFORM ###############
 
-def transform(**kwargs):  # Colon added here
+def transform(**kwargs):
     cotacoes = kwargs['ti'].xcom_pull(task_id='extract')
     csvStringIO = StringIO(cotacoes)
 
@@ -68,8 +65,6 @@ def transform(**kwargs):  # Colon added here
         "PARIDADE_VENDA"
     ]
 
-
-
     data_types = {
         "DT_FECHAMENTO": str,
         "COD_MOEDA": str,
@@ -82,28 +77,29 @@ def transform(**kwargs):  # Colon added here
     }
 
     df = pd.read_csv(
-        csvStringI0,
+        csvStringIO,
         sep=";",
         decimal=",",
         thousands=".",
         encoding="utf-8",
         header=None,
         names=column_names,
-        dtype=data_types,
-        parse_dates=parse_dates
+        dtype=data_types
     )
 
+    return df
+
+# Definindo a tarefa de transformação fora da função
 transform_task = PythonOperator(  
+    task_id='transform',  # Aqui também garantimos que o task_id está presente
     python_callable=transform,
     provide_context=True,
     dag=dag
 )
 
-
 ######## CREATE TABLE ###########
 
 create_table_ddl = """
-
     CREATE TABLE IF NOT EXISTS cotacoes (
         dt_fechamento DATE,
         cod_moeda TEXT,
@@ -113,23 +109,22 @@ create_table_ddl = """
         taxa_venda REAL,
         paridade_compra REAL,
         paridade_venda REAL,
-        data_processamento TIMESTAMP,  -- Adicionei o tipo TIMESTAMP para data e hora
+        data_processamento TIMESTAMP,
         CONSTRAINT table_pk PRIMARY KEY (dt_fechamento, cod_moeda)
     );
-    """
+"""
 
-create_table_postgres = postgresOperator(
-
-    task_id="create_table_postgres",
+# Definindo a tarefa de criação de tabela fora da função
+create_table_postgres = PostgresOperator(
+    task_id="create_table_postgres",  # task_id está definido corretamente
     postgres_conn_id="postgres_astro",
     sql=create_table_ddl,
     dag=dag
-    )
+)
 
 #### --- LOAD --- ####
 
 def load(**kwargs):
-
     ti = kwargs['ti']
     cotacoes_df = ti.xcom_pull(task_ids='transform')
 
@@ -150,13 +145,15 @@ def load(**kwargs):
             "TAXA_COMPRA", "TAXA_VENDA", "PARIDADE_COMPRA", "PARIDADE_VENDA",
             "DATA_PROCESSAMENTO"
         ]
-        )
-
-    load_task = PythonOperator(
-        task_id='load',
-        python_callable=load,
-        provide_context=True,
-        dag=dag  # Certifique-se de que 'dag' está definido corretamente
     )
 
+# Definindo a tarefa de carga fora da função
+load_task = PythonOperator(
+    task_id='load',  # task_id definido corretamente
+    python_callable=load,
+    provide_context=True,
+    dag=dag  # Certifique-se de que 'dag' está definido corretamente
+)
+
+# Definindo a ordem de execução das tarefas
 extract_task >> transform_task >> create_table_postgres >> load_task
