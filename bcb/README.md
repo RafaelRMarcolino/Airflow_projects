@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 Overview
 ========
 
@@ -47,8 +46,7 @@ Contact
 =======
 
 The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
-# Airflow_projects
-=======
+
 ## Inicializando projeto astrobc
 sudo apt update
  brew install astro
@@ -62,9 +60,6 @@ sudo apt update
  astro dev init
  
 ## install apacheriflow
-
-airflow standalone
-
 pip uninstall apache-airflow
 
 Inicializar o banco de dados do Airflow (se ainda não feito): Este comando cria as tabelas necessárias no banco de dados:
@@ -91,4 +86,3 @@ airflow users create \
     --email admin@example.com
 
 
->>>>>>> b79516b (dados climaticos)
